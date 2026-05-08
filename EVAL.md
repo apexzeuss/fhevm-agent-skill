@@ -1,4 +1,11 @@
-I built this as a practical FHEVM agent skill, not just a reference doc. The main file teaches agents the mental model, safe coding patterns, common failure modes, and self-check steps for confidential smart contracts. The EVAL.md file defines happy-path and adversarial prompts so reviewers can test whether the skill actually improves agent behavior.
+## Why This Evaluation Exists
+
+This skill is meant to be judged by behavior, not length. A good FHEVM 
+agent skill should make the agent avoid specific mistakes: plaintext 
+branching on encrypted values, missing ACL grants, stale SDK APIs, 
+synchronous decryption assumptions, and unsupported encrypted division.
+
+The prompts below test those failure modes directly.
 # Evaluation Protocol
 
 This file helps reviewers test whether the skill improves an AI coding agent's FHEVM behavior.
