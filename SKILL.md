@@ -1,4 +1,3 @@
-
 # FHEVM Agent Skill — Confidential Smart Contract Development
 > For AI coding agents: Claude Code, Cursor, Windsurf, GitHub Copilot
 
@@ -35,7 +34,7 @@ This `SKILL.md` is a portable, agent-agnostic operating manual for building conf
 - Optimized for failure prevention: every section teaches the agent what to do and what not to do.
 - Treat hardcoded addresses and SDK config as release-sensitive; prefer official config exports.
 
-### Included Working Examples
+### Included Examples
 
 1. OpenZeppelin ERC-7984 confidential token
 2. Manual confidential token with encrypted balances and allowances
@@ -165,7 +164,7 @@ INFURA_API_KEY=your_key_here
 ### Step 3: Install Additional Libraries
 
 ```bash
-# OpenZeppelin Confidential Contracts (audited — recommended for production)
+# OpenZeppelin Confidential Contracts (review dependency and version before production)
 npm install @openzeppelin/confidential-contracts
 
 # If NOT using template, install manually:
@@ -175,7 +174,7 @@ npm install @zama-fhe/relayer-sdk    # frontend / relayer SDK
 
 > **Version hygiene:** Older tutorials may refer to `@fhevm/sdk`, `initFhevm`, or `reencrypt`. Current Zama Relayer SDK docs use `@zama-fhe/relayer-sdk`, `initSDK`, and `userDecrypt`. Prefer the current package unless a project is intentionally pinned to an older stack.
 
-### Step 4: Frontend — ALWAYS Use Vite (Never Webpack / Create React App)
+### Step 4: Frontend — Prefer Vite for SDK Compatibility
 
 ```bash
 npm create vite@latest my-frontend -- --template react-ts
@@ -205,7 +204,7 @@ export default defineConfig({
 
 ---
 
-## ENCRYPTED TYPES — COMPLETE REFERENCE
+## ENCRYPTED TYPES — PRACTICAL REFERENCE
 
 ### Storage Types (inside the contract)
 
@@ -474,7 +473,7 @@ function onResultDecrypted(uint256 /*requestId*/, uint64 result) external {
 
 ---
 
-## COMPLETE CONTRACT EXAMPLES
+## CONTRACT EXAMPLES
 
 ### Example 1: Confidential Token — ERC-7984 via OpenZeppelin (Fastest Path)
 
@@ -493,7 +492,7 @@ contract MyConfidentialToken is ZamaSepoliaConfig, ERC7984 {
 // ERC7984 handles ACL, encrypted transfers, allowances automatically
 ```
 
-### Example 2: Confidential Token — Manual (Full Control)
+### Example 2: Confidential Token — Manual Pattern
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -708,7 +707,7 @@ contract ConfidentialVote is SepoliaConfig {
 
 ## TESTING WITH HARDHAT
 
-### Full Test Example
+### Test Example
 
 ```typescript
 import { ethers } from "hardhat";
@@ -775,7 +774,7 @@ const plaintext = await instance.decrypt(contractAddress, handle);
 
 ---
 
-## FRONTEND INTEGRATION — COMPLETE REACT EXAMPLE
+## FRONTEND INTEGRATION — REACT EXAMPLE
 
 ```typescript
 // hooks/useFhevm.ts
@@ -907,7 +906,7 @@ TEST
 
 ## DEMO AND EVIDENCE PACKAGE
 
-For bounty submission, include evidence that an AI coding agent can actually use this skill to produce working FHEVM code.
+If using this for a bounty submission, include evidence that an AI coding agent can actually use this skill to produce FHEVM code that compiles and passes tests.
 
 ### Recommended Demo Flow
 
@@ -1005,7 +1004,7 @@ Expected agent behavior: re-grant `FHE.allowThis` and `FHE.allow(handle, owner)`
 
 ## OPENZEPPELIN CONFIDENTIAL CONTRACTS REFERENCE
 
-Audited Solidity contracts built on FHEVM — production-ready primitives:
+OpenZeppelin contracts built on FHEVM. Review package version, inherited config, and token semantics before production use:
 
 ```bash
 npm install @openzeppelin/confidential-contracts
@@ -1020,7 +1019,7 @@ npm install @openzeppelin/confidential-contracts
 | `VestingWalletCliffConfidential` | Cliff-based confidential vesting |
 
 ```solidity
-// Fastest path to a production-ready confidential token
+// Short path to a confidential token primitive
 import {ERC7984} from "@openzeppelin/confidential-contracts/token/ERC7984/ERC7984.sol";
 import {ZamaSepoliaConfig} from "@openzeppelin/confidential-contracts/access/ZamaSepoliaConfig.sol";
 
