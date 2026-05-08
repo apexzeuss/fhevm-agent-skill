@@ -1,14 +1,12 @@
-## Why This Evaluation Exists
-
-This skill is meant to be judged by behavior, not length. A good FHEVM 
-agent skill should make the agent avoid specific mistakes: plaintext 
-branching on encrypted values, missing ACL grants, stale SDK APIs, 
-synchronous decryption assumptions, and unsupported encrypted division.
-
-The prompts below test those failure modes directly.
 # Evaluation Protocol
 
 This file helps reviewers test whether the skill improves an AI coding agent's FHEVM behavior.
+
+## Why This Evaluation Exists
+
+This skill should be judged by behavior, not by length. A useful FHEVM agent skill should make an agent avoid specific mistakes: plaintext branching on encrypted values, missing ACL grants, stale SDK APIs, synchronous decryption assumptions, and unsupported encrypted division.
+
+The prompts below test those failure modes directly. They are intentionally small so reviewers can see whether the agent changes its coding behavior after reading `SKILL.md`.
 
 ## Goal
 
