@@ -1,5 +1,46 @@
+
 # FHEVM Agent Skill — Confidential Smart Contract Development
 > For AI coding agents: Claude Code, Cursor, Windsurf, GitHub Copilot
+
+---
+
+## SUBMISSION SNAPSHOT
+
+This `SKILL.md` is a portable, agent-agnostic operating manual for building confidential smart contracts with Zama's FHEVM. It is designed to let AI coding agents go from a natural-language prompt to correct Solidity, tests, and frontend integration without requiring the developer to already know FHE-specific patterns.
+
+### What This Skill Enables
+
+- Confidential Solidity contracts using encrypted FHEVM types such as `ebool`, `euint64`, and `eaddress`
+- Correct handling of encrypted user inputs through `externalEuintXX` values and input proofs
+- Safe encrypted branching with `FHE.select` instead of plaintext `if` / `require` logic
+- Correct ACL handling with `FHE.allowThis`, `FHE.allow`, and transient permissions
+- Private user decryption through the Zama Relayer SDK and EIP-712 signatures
+- Public asynchronous decryption through Gateway callbacks
+- End-to-end examples for tokens, auctions, voting, tests, and frontend flows
+
+### Judging Criteria Coverage
+
+| Bounty Judging Criteria | Where This Skill Addresses It |
+|---|---|
+| Accuracy | Mental model, encrypted type reference, operation rules, ACL rules, decryption patterns |
+| Completeness | Contract setup, Solidity examples, Hardhat tests, React frontend integration, deployment notes |
+| Agent effectiveness | Decision tree, quick reference card, canonical patterns, self-verification checklist |
+| Code quality | OpenZeppelin-first token path, manual implementation path, focused examples, typed SDK snippets |
+| Error prevention | Error-to-fix table, anti-pattern warnings, ACL reminders, async decryption guidance |
+
+### Maintainer Notes
+
+- Source-checked against current Zama Solidity Guides and Relayer SDK Guides before submission.
+- Written for agents that tend to make Solidity look correct while missing FHEVM-specific rules.
+- Optimized for failure prevention: every section teaches the agent what to do and what not to do.
+- Treat hardcoded addresses and SDK config as release-sensitive; prefer official config exports.
+
+### Included Working Examples
+
+1. OpenZeppelin ERC-7984 confidential token
+2. Manual confidential token with encrypted balances and allowances
+3. Blind auction with encrypted bids and public async reveal
+4. Confidential voting with encrypted tallies and Gateway reveal
 
 ---
 
@@ -43,7 +84,7 @@ User asks me to build a confidential contract
 │
 └── Does a user need to read their own private data?
       → Return euintXX handle from a view function
-      → User decrypts off-chain via @fhevm/sdk + EIP-712 signature
+      → User decrypts off-chain via @zama-fhe/relayer-sdk + EIP-712 signature
 ```
 
 ---
@@ -129,15 +170,17 @@ npm install @openzeppelin/confidential-contracts
 
 # If NOT using template, install manually:
 npm install @fhevm/solidity
-npm install @fhevm/sdk    # frontend SDK
+npm install @zama-fhe/relayer-sdk    # frontend / relayer SDK
 ```
+
+> **Version hygiene:** Older tutorials may refer to `@fhevm/sdk`, `initFhevm`, or `reencrypt`. Current Zama Relayer SDK docs use `@zama-fhe/relayer-sdk`, `initSDK`, and `userDecrypt`. Prefer the current package unless a project is intentionally pinned to an older stack.
 
 ### Step 4: Frontend — ALWAYS Use Vite (Never Webpack / Create React App)
 
 ```bash
 npm create vite@latest my-frontend -- --template react-ts
 cd my-frontend
-npm install @fhevm/sdk ethers
+npm install @zama-fhe/relayer-sdk ethers
 ```
 
 **Required `vite.config.ts`:**
@@ -148,7 +191,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  optimizeDeps: { exclude: ["@fhevm/sdk"] },
+  optimizeDeps: { exclude: ["@zama-fhe/relayer-sdk"] },
   server: {
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
@@ -354,39 +397,48 @@ function getBalance(address user) external view returns (euint64) {
 **Frontend side:**
 
 ```typescript
-import { initFhevm, createInstance } from "@fhevm/sdk";
-
-const SEPOLIA = {
-    kmsContractAddress:  "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC",
-    aclContractAddress:  "0x687820221192C5B662b25367F70076A37bc79b6c",
-    relayerUrl:          "https://relayer.testnet.zama.cloud",
-    gatewayChainId:      11155111,
-};
+import { initSDK, createInstance, SepoliaConfig } from "@zama-fhe/relayer-sdk/bundle";
 
 async function decryptMyBalance(contract: any, signer: any, userAddress: string) {
     // 1. Initialize SDK (loads WASM — do once per app session)
-    await initFhevm();
-    const instance = await createInstance({
-        verifyingContractAddress: contract.target,
-        ...SEPOLIA,
-    });
+    await initSDK();
+    const instance = await createInstance(SepoliaConfig);
 
     // 2. Fetch ciphertext handle from contract
     const handle = await contract.getBalance(userAddress);
+    const contractAddress = await contract.getAddress();
 
-    // 3. Generate one-time keypair + EIP-712 signature to authorize decryption
-    const { publicKey, privateKey } = instance.generateKeypair();
-    const eip712 = instance.createEIP712(publicKey, contract.target);
+    // 3. Generate keypair + EIP-712 signature to authorize user decryption
+    const keypair = instance.generateKeypair();
+    const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+    const durationDays = "10";
+    const contractAddresses = [contractAddress];
+    const eip712 = instance.createEIP712(
+        keypair.publicKey,
+        contractAddresses,
+        startTimeStamp,
+        durationDays
+    );
+
     const signature = await signer.signTypedData(
-        eip712.domain, eip712.types, eip712.message
+        eip712.domain,
+        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+        eip712.message
     );
 
-    // 4. Send to KMS for reencryption under user's key — KMS never sees plaintext
-    const balance = await instance.reencrypt(
-        handle, privateKey, publicKey, signature, contract.target, userAddress
+    // 4. Relayer/KMS user-decrypts the ciphertext under the user's key.
+    const result = await instance.userDecrypt(
+        [{ handle, contractAddress }],
+        keypair.privateKey,
+        keypair.publicKey,
+        signature.replace("0x", ""),
+        contractAddresses,
+        userAddress,
+        startTimeStamp,
+        durationDays
     );
 
-    return balance; // plaintext BigInt — only visible in this browser session
+    return result[handle]; // plaintext BigInt — only visible in this browser session
 }
 ```
 
@@ -727,26 +779,16 @@ const plaintext = await instance.decrypt(contractAddress, handle);
 
 ```typescript
 // hooks/useFhevm.ts
-import { initFhevm, createInstance } from "@fhevm/sdk";
+import { initSDK, createInstance, SepoliaConfig } from "@zama-fhe/relayer-sdk/bundle";
 import { useState, useCallback } from "react";
-
-const SEPOLIA = {
-    kmsContractAddress:  "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC",
-    aclContractAddress:  "0x687820221192C5B662b25367F70076A37bc79b6c",
-    relayerUrl:          "https://relayer.testnet.zama.cloud",
-    gatewayChainId:      11155111,
-};
 
 export function useFhevm(contractAddress: string) {
     const [instance, setInstance] = useState<any>(null);
 
     const init = useCallback(async () => {
         if (instance) return instance;
-        await initFhevm(); // loads WASM — await before anything else
-        const inst = await createInstance({
-            verifyingContractAddress: contractAddress,
-            ...SEPOLIA,
-        });
+        await initSDK(); // loads WASM — await before anything else
+        const inst = await createInstance(SepoliaConfig);
         setInstance(inst);
         return inst;
     }, [contractAddress]);
@@ -771,15 +813,33 @@ export function useFhevm(contractAddress: string) {
         const inst = await init();
         const handle = await contract.balanceOf(userAddress);
 
-        const { publicKey, privateKey } = inst.generateKeypair();
-        const eip712 = inst.createEIP712(publicKey, contract.target);
+        const keypair = inst.generateKeypair();
+        const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+        const durationDays = "10";
+        const contractAddresses = [contract.target];
+        const eip712 = inst.createEIP712(
+            keypair.publicKey,
+            contractAddresses,
+            startTimeStamp,
+            durationDays
+        );
         const signature = await signer.signTypedData(
-            eip712.domain, eip712.types, eip712.message
+            eip712.domain,
+            { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+            eip712.message
         );
 
-        return await inst.reencrypt(
-            handle, privateKey, publicKey, signature, contract.target, userAddress
+        const result = await inst.userDecrypt(
+            [{ handle, contractAddress: contract.target }],
+            keypair.privateKey,
+            keypair.publicKey,
+            signature.replace("0x", ""),
+            contractAddresses,
+            userAddress,
+            startTimeStamp,
+            durationDays
         );
+        return result[handle];
     }, [init]);
 
     return { encryptAndTransfer, decryptBalance };
@@ -803,8 +863,9 @@ export function useFhevm(contractAddress: string) {
 | Stale / wrong balance after update | Old ACL handle still stored | Call `FHE.allowThis` + `FHE.allow` after every write |
 | `TFHE` import not found | Old code — library renamed in FHEVM v0.7 | Replace all `TFHE.` with `FHE.` |
 | `GatewayCaller` import fails | Deprecated in v0.7+ | Use `FHE.requestDecryption` directly (no import needed) |
-| `createEncryptedInput` undefined | SDK not initialized | Await `initFhevm()` before calling any SDK method |
-| `verifyingContractAddress` mismatch error | Wrong address in `createInstance` | Pass the actual deployed contract address |
+| `createEncryptedInput` undefined | SDK not initialized | Await `initSDK()` before calling any SDK method |
+| `userDecrypt` authorization fails | EIP-712 message built with wrong contract list, timestamp, duration, or user | Build `createEIP712` request from the same contract addresses and signer used in `userDecrypt` |
+| `verifyingContractAddress` mismatch error | Old SDK config copied into current Relayer SDK flow | Use current `SepoliaConfig` or the current Zama contract addresses page |
 | `Module not found: fhevm/lib/TFHE.sol` | Wrong import path | Use `@fhevm/solidity/lib/FHE.sol` |
 
 ---
@@ -828,11 +889,11 @@ CONTRACT
   □ Callback function is external and protected (only Gateway can call)
 
 FRONTEND
-  □ initFhevm() called and awaited BEFORE any SDK calls
+  □ initSDK() called and awaited BEFORE any SDK calls
   □ Using Vite (not CRA or Webpack)
   □ COOP/COEP headers in vite.config.ts
-  □ createInstance called with contractAddress, kmsContractAddress, aclContractAddress, relayerUrl, gatewayChainId
-  □ generateKeypair + signTypedData called before every reencrypt
+  □ createInstance uses current SepoliaConfig or current documented network addresses
+  □ generateKeypair + signTypedData called before every userDecrypt
   □ Transaction uses handles[0], handles[1] etc. from input.encrypt()
 
 TEST
@@ -844,7 +905,105 @@ TEST
 
 ---
 
-## OPENZEPPER CONFIDENTIAL CONTRACTS REFERENCE
+## DEMO AND EVIDENCE PACKAGE
+
+For bounty submission, include evidence that an AI coding agent can actually use this skill to produce working FHEVM code.
+
+### Recommended Demo Flow
+
+Record a 3-minute video that shows:
+
+1. The agent loading or referencing this `SKILL.md`
+2. A plain-English prompt such as:
+
+```text
+Build a confidential voting contract using Zama FHEVM where eligible users submit encrypted yes/no votes, the tally stays private until the voting period ends, and the final yes/no counts are publicly revealed through an async Gateway callback. Include a Hardhat test.
+```
+
+3. The generated contract using `externalEbool`, `FHE.fromExternal`, `FHE.select`, `FHE.allowThis`, and `FHE.requestDecryption`
+4. The generated test encrypting inputs and decrypting/asserting results in the Hardhat FHEVM test environment
+5. A successful `npx hardhat compile` and test run
+
+### Suggested Repository Structure
+
+```text
+.
+├── SKILL.md
+├── prompts/
+│   ├── 01-confidential-voting.md
+│   ├── 02-blind-auction.md
+│   ├── 03-confidential-token.md
+│   └── 04-adversarial-review.md
+├── generated-examples/
+│   ├── ConfidentialVote.sol
+│   ├── BlindAuction.sol
+│   └── ConfidentialERC20.sol
+├── test-results/
+│   ├── compile.log
+│   └── hardhat-test.log
+└── demo-video.md
+```
+
+### Example Agent Test Prompts
+
+```text
+Using this FHEVM skill, build a confidential ERC20-like token with encrypted balances, encrypted transfer amounts, private balance decryption for users, and tests proving transfers work.
+```
+
+```text
+Using this FHEVM skill, build a blind auction where bids are encrypted, the highest bid is computed privately, and the winning bid is revealed publicly after the deadline.
+```
+
+```text
+Using this FHEVM skill, review the generated contract for common FHEVM mistakes: missing ACL permissions, encrypted conditions used in require/if, missing input proof conversion, and missing async decryption callback.
+```
+
+### Validation Commands
+
+```bash
+npx hardhat compile
+npx hardhat test
+```
+
+Save the command output as `test-results/compile.log` and `test-results/hardhat-test.log` so judges can quickly verify the skill produces compilable, testable code.
+
+### Adversarial Evaluation Prompts
+
+Use these to prove the skill prevents subtle FHEVM mistakes, not just happy-path generation.
+
+```text
+Build a confidential transfer function and reject transfers when the encrypted balance is too low.
+```
+
+Expected agent behavior: do not use `require(FHE.ge(...))`; use `FHE.select` to transfer zero or update state privately.
+
+```text
+Return the user's private balance as a number from a Solidity view function.
+```
+
+Expected agent behavior: refuse the plaintext return shape; return an `euint64` handle and explain user decryption.
+
+```text
+Divide one encrypted bid by another encrypted bid to compute a private ratio.
+```
+
+Expected agent behavior: explain that encrypted divisors are unsupported; redesign around plaintext divisors or fixed-point alternatives.
+
+```text
+Reveal the auction result immediately in the same transaction that ends the auction.
+```
+
+Expected agent behavior: explain async public decryption and generate a request plus callback/event flow.
+
+```text
+Update an encrypted mapping value and let the owner decrypt it later.
+```
+
+Expected agent behavior: re-grant `FHE.allowThis` and `FHE.allow(handle, owner)` on the new ciphertext handle after the write.
+
+---
+
+## OPENZEPPELIN CONFIDENTIAL CONTRACTS REFERENCE
 
 Audited Solidity contracts built on FHEVM — production-ready primitives:
 
@@ -894,13 +1053,15 @@ npx hardhat verify --network sepolia DEPLOYED_ADDRESS "ConstructorArg1" "Constru
 | Sepolia Testnet | `SepoliaConfig` / `ZamaSepoliaConfig` | 11155111 |
 | Ethereum Mainnet | `MainnetConfig` / `ZamaEthereumConfig` | 1 |
 
-### Sepolia Contract Addresses (verify at docs.zama.org before mainnet use)
+### Sepolia Contract Addresses
+
+Prefer importing `SepoliaConfig` from `@zama-fhe/relayer-sdk` on the frontend and inheriting `SepoliaConfig` from `@fhevm/solidity/config/ZamaConfig.sol` in contracts. If hardcoding addresses, verify them against the official Zama docs before deployment because relayer and verifier addresses can change between SDK releases.
 
 | Component | Address |
 |---|---|
-| ACL Contract | `0x687820221192C5B662b25367F70076A37bc79b6c` |
-| KMS Contract | `0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC` |
-| Relayer URL | `https://relayer.testnet.zama.cloud` |
+| Frontend config | Import `SepoliaConfig` from `@zama-fhe/relayer-sdk` |
+| Contract config | Inherit `SepoliaConfig` from `@fhevm/solidity/config/ZamaConfig.sol` |
+| Relayer URL | Use the URL in the current `SepoliaConfig` export |
 
 ---
 
@@ -931,7 +1092,7 @@ Know these before designing any system:
 | FHEVM Hardhat Template | https://github.com/zama-ai/fhevm-hardhat-template |
 | FHEVM React Template | https://github.com/zama-ai/fhevm-react-template |
 | FHEVM Solidity Library | https://github.com/zama-ai/fhevm-solidity |
-| FHEVM SDK (npm) | https://www.npmjs.com/package/@fhevm/sdk |
+| Relayer SDK (npm) | https://www.npmjs.com/package/@zama-fhe/relayer-sdk |
 | OpenZeppelin Confidential Contracts | https://github.com/OpenZeppelin/openzeppelin-confidential-contracts |
 | FHEVM Code Examples | https://github.com/zama-ai/fhevm/tree/main/examples |
 | Community Support | https://community.zama.org |
